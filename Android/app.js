@@ -56,6 +56,57 @@ function playCompleteBeep() {
   setTimeout(() => beep(784, 0.15), 400); setTimeout(() => beep(1047, 0.3), 600);
 }
 
+// ===== Vibration & Notifications (Galaxy Band support) =====
+let notifPermission = 'default';
+
+function requestNotifPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().then(p => { notifPermission = p; });
+  } else if ('Notification' in window) {
+    notifPermission = Notification.permission;
+  }
+}
+
+function vibrate(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+function sendNotification(title, body, tag) {
+  // Vibrate phone
+  vibrate([200, 100, 200]);
+  // Send notification (mirrors to Galaxy Band)
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const n = new Notification(title, {
+      body: body,
+      icon: './icon-192.svg',
+      tag: tag || 'workout-timer',
+      renotify: true,
+      vibrate: [200, 100, 200]
+    });
+    setTimeout(() => n.close(), 4000);
+  }
+}
+
+function notifyWorkStart() {
+  vibrate([200, 100, 300]);
+  sendNotification('💪 운동 시작!', `라운드 ${currentRound}/${config.rounds} · 세트 ${currentSet}/${config.sets}`, 'work');
+}
+
+function notifyRestStart() {
+  vibrate([150, 80, 150]);
+  sendNotification('😮‍💨 휴식!', `${config.restTime}초 휴식`, 'rest');
+}
+
+function notifySetRest() {
+  vibrate([300, 150, 300]);
+  sendNotification('☕ 세트 휴식', `세트 ${currentSet} 완료! ${config.setRest}초 휴식`, 'set-rest');
+}
+
+function notifyComplete() {
+  vibrate([200, 100, 200, 100, 400]);
+  sendNotification('🎉 운동 완료!', `${currentProgram.name} 끝! 수고하셨습니다!`, 'complete');
+}
+
 // ===== DOM =====
 const $ = (s) => document.getElementById(s);
 const homeScreen = $('homeScreen');
@@ -214,8 +265,9 @@ function startCountdown(cb) {
 
 function togglePlayPause() {
   ensureAudio();
+  requestNotifPermission();
   if (timerState === 'idle') {
-    startCountdown(() => { timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; setPlayIcon(true); startInterval(); playWorkBeep(); updateDisplay(); });
+    startCountdown(() => { timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; setPlayIcon(true); startInterval(); playWorkBeep(); notifyWorkStart(); updateDisplay(); });
   } else if (timerState === 'paused') {
     timerState = pausedFrom; setPlayIcon(true); startInterval();
   } else if (['work', 'rest', 'setRest'].includes(timerState)) {
@@ -236,14 +288,14 @@ function tick() {
       if (currentRound >= config.rounds && currentSet >= config.sets) { finish(); return; }
       if (currentRound >= config.rounds) {
         // Set rest
-        timerState = 'setRest'; totalTime = config.setRest; timeLeft = config.setRest; playRestBeep();
+        timerState = 'setRest'; totalTime = config.setRest; timeLeft = config.setRest; playRestBeep(); notifySetRest();
       } else {
-        timerState = 'rest'; totalTime = config.restTime; timeLeft = config.restTime; playRestBeep();
+        timerState = 'rest'; totalTime = config.restTime; timeLeft = config.restTime; playRestBeep(); notifyRestStart();
       }
     } else if (timerState === 'rest') {
-      currentRound++; timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; playWorkBeep();
+      currentRound++; timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; playWorkBeep(); notifyWorkStart();
     } else if (timerState === 'setRest') {
-      currentSet++; currentRound = 1; timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; playWorkBeep();
+      currentSet++; currentRound = 1; timerState = 'work'; totalTime = config.workTime; timeLeft = config.workTime; playWorkBeep(); notifyWorkStart();
     }
   } else if (timeLeft <= 3 && timeLeft > 0) {
     playCountdownBeep();
@@ -253,7 +305,7 @@ function tick() {
 
 function finish() {
   clearInterval(intervalId); intervalId = null;
-  timerState = 'done'; playCompleteBeep();
+  timerState = 'done'; playCompleteBeep(); notifyComplete();
   const totalRounds = config.rounds * config.sets;
   const totalSec = (config.workTime + config.restTime) * totalRounds;
   const workSec = config.workTime * totalRounds;
